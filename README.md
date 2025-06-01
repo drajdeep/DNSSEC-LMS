@@ -183,12 +183,3 @@ for level from (H-1) downto 0:
 - **Small signatures** (936B vs 4KB for RSA-4096)
 - **Key rotation** via Merkle leaves
 
-
-This documentation covers:
-1. **Technical Specifications**: Parameters and data structures
-2. **Algorithmic Details**: Core cryptographic operations
-3. **Process Flows**: Step-by-step signing/verification
-4. **Security Properties**: Resistance against classical/quantum attacks
-5. **Real-World Integration**: DNSSEC deployment considerations
-
-The implementation balances cryptographic rigor with practical considerations for DNS infrastructure. Key innovations include the Winternitz optimization and Merkle tree integration for efficient key management.
