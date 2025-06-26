@@ -63,7 +63,7 @@ Measured on a standard desktop environment:
 | Message Digest Hashing         | ~0.0000     | (no significant change) |
 | LM-OTS Signature Generation    | 0.0709      | (no significant change) |
 
-Overall wall-clock time: **2:42.81** (h:mm:ss)
+Overall time: **2 Minutes 42.81 Seconds**
 
 ## Signature Size
 
