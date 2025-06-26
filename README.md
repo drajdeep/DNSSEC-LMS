@@ -80,7 +80,7 @@ The generated signature file `lms_signature.bin` contains:
 
 - **`N`**: Hash length (24 bytes, truncated SHA-256)
 - **`H`**: Merkle tree height (10)
-- **`LEAVES`**: Number of leaves (2^H = 64)
+- **`LEAVES`**: Number of leaves (2^H = 1024)
 - **`W`**: Winternitz parameter (32)
 - **`P`**: Number of LM-OTS chains (8)
 
