@@ -1,185 +1,96 @@
+# LMS as KSK in Post-Quantum DNSSEC
 
-
-
-# LMS (Leighton-Micali Signatures) Implementation Documentation
-
-## Overview
-This document details the implementation of a hash-based post-quantum signature scheme based on RFC 8554 (LMS) for DNSSEC applications. The system combines:
-- LM-OTS (One-Time Signatures)
-- Merkle tree authentication
-- SHA-256 truncated to 192-bit for efficiency
+This repository provides an implementation of the Leighton-Micali Signature (LMS) scheme as a Key Signing Key (KSK) for Post-Quantum DNSSEC. It simulates the LMS signing process using LM-OTS keypairs and a Merkle tree, outputs a DNSKEY-signed zone signature, and includes benchmarking metrics for performance and resource usage.
 
 ## Table of Contents
-1. [System Parameters](#system-parameters)
-2. [Key Components](#key-components)
-3. [Core Algorithms](#core-algorithms)
-4. [Signature Generation](#signature-generation)
-5. [Verification Process](#verification-process)
-6. [File Format](#file-format)
-7. [Security Analysis](#security-analysis)
-8. [DNSSEC Integration](#dnssec-integration)
 
----
+- [Overview](#overview)
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Build Instructions](#build-instructions)
+- [Usage](#usage)
+- [Benchmarking](#benchmarking)
+- [Signature Size](#signature-size)
+- [Code Structure](#code-structure)
 
-## System Parameters
+## Overview
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `N`       | 24    | Hash output size (bytes) = 192-bit |
-| `W`       | 16    | Winternitz parameter (base-65536) |
-| `P`       | 16    | Signature elements = (8*N/W) + 4 |
-| `H`       | 6     | Merkle tree height → 64 leaves |
-| `LEAVES`  | 64    | 2^H one-time key pairs |
+The LMS (Leighton-Micali Signature) scheme is an evolution of hash-based signatures providing post-quantum security. In DNSSEC, a Key Signing Key (KSK) signs Zone Signing Keys (ZSKs) to ensure the authenticity of DNS records. This implementation:
 
-**Design Choices:**
-- **192-bit hashes**: Truncated SHA-256 balances security and performance
-- **W=16**: Optimizes for signature size (P=16) vs computation (65k hashes)
-- **Merkle H=6**: Supports 64 signatures per root key
+- Generates LM-OTS keypairs (private/public).
+- Constructs a Merkle tree over LM-OTS public key hashes.
+- Signs a combined message of an LM-OTS public key and a sample ZSK DNSKEY record.
+- Outputs an LMS signature file (`lms_signature.bin`) containing signature elements, authentication path, Merkle root, and LM-OTS public key.
 
----
+## Features
 
-## Key Components
+- **LM-OTS key generation** with Winternitz parameter _W = 32_.
+- **Merkle tree** of height _H = 10_ (64 leaves).
+- **SHA-192** as the hash function (first 24 bytes of SHA-256).
+- **Benchmarking** of time and memory usage for each step.
 
-### 1. LM-OTS Key Pair
-```c
-typedef struct {
-    uint8_t sk[P][N];   // Private key (16x24B random values)
-    uint8_t pk[P][N];   // Public key (each sk[i] hashed 65,535 times)
-} WOTS_Keypair;
+## Prerequisites
+
+- GCC with C99 support
+- OpenSSL development libraries (for SHA-256)
+- Unix-like environment (for `/proc/self/status` memory reading)
+
+## Build Instructions
+
+```sh
+gcc ksk_lms.c -o ksk_lms -lssl -lcrypto -lm
 ```
 
-### 2. Merkle Tree Structure
-- **Leaves**: SHA-192 hashes of LM-OTS public keys
-- **Nodes**: 127 total (64 leaves + 63 internal nodes)
-- **Root**: Ultimate public key (24 bytes)
+## Usage
 
----
-
-## Core Algorithms
-
-### 1. Hash Function
-```c
-void hash_sha192(const uint8_t *in, size_t inlen, uint8_t *out) {
-    uint8_t full[32];
-    SHA256(in, inlen, full);      // Standard SHA-256
-    memcpy(out, full, N);         // Truncate to 192-bit
-}
+```sh
+./ksk_lms
 ```
-*Rationale*: SHA-256 provides cryptographic strength while truncation reduces storage.
 
-### 2. LM-OTS Public Key Generation
-```python
-for i in 0..15:
-    pk[i] = sk[i]
-    for j in 0..65534:
-        pk[i] = SHA192(pk[i])
-```
-*Security*: One-wayness relies on preimage resistance of SHA-192.
+This will generate:
 
-### 3. Merkle Tree Construction
-```python
-# Bottom-up construction
-for level from (H-1) downto 0:
-    for node in level:
-        parent = SHA192(left_child || right_child)
-```
-*Efficiency*: O(N) space with 2^(H+1)-1 nodes.
+- Console output of each step (keypair generation, Merkle tree build, digest, signature).
+- `lms_signature.bin` containing the binary signature components.
 
----
+## Benchmarking
 
-## Signature Generation
+Measured on a standard desktop environment:
 
-### Inputs
-- LM-OTS private key (`sk`)
-- Message: `(LM-OTS-PK || DNSKEY record)`
+| Step                           | Time (s)    | Memory Usage (RSS KB) |
+|--------------------------------|-------------|------------------------|
+| LM-OTS Keypair Generation      | 162.9968    | ~5,532                |
+| Merkle Tree Construction       | 0.0004      | (no significant change) |
+| Message Digest Hashing         | ~0.0000     | (no significant change) |
+| LM-OTS Signature Generation    | 0.0709      | (no significant change) |
 
-### Steps:
-1. **Hash Message** → 192-bit digest
-2. **Split Digest**:
-   - 12× 16-bit chunks (message)
-   - 4× 16-bit chunks (checksum)
-   ```c
-   checksum = Σ(65535 - chunks[0..11])
-   ```
-3. **Generate Signature**:
-   ```c
-   for i in 0..15:
-       sig[i] = hash^chunks[i](sk[i])
-   ```
+Overall wall-clock time: **2:42.81** (h:mm:ss)
 
----
+## Signature Size
 
-## Verification Process
+The generated signature file `lms_signature.bin` contains:
 
-1. **Recover Public Key**:
-   ```c
-   for i in 0..15:
-       tmp = sig[i]
-       for j in 0..(65535 - chunks[i]):
-           tmp = SHA192(tmp)
-       pk[i] = tmp
-   ```
-2. **Rebuild Leaf**:
-   ```c
-   leaf = SHA192(pk[0] || pk[1] || ... || pk[15])
-   ```
-3. **Recompute Root**:
-   ```c
-   current = leaf
-   for level in 0..5:
-       sibling = auth_path[level]
-       current = (position % 2 == 0) ? 
-                 SHA192(current || sibling) : 
-                 SHA192(sibling || current)
-   ```
-4. **Validate**: `current == stored_root`
+- **P = 8** signature elements, each _N = 24_ bytes → 8 × 24 = 192 bytes
+- **H = 10** authentication path nodes, each _N = 24_ bytes → 10 × 24 = 240 bytes
+- **Merkle root**, 24 bytes
+- **LM-OTS public key**, 8 × 24 = 192 bytes
 
----
+**Total size** = 192 + 240 + 24 + 192 = **648 bytes**
 
-## File Format (`lms_signature.bin`)
+## Code Structure
 
-| Offset (bytes) | Size       | Content                  |
-|----------------|------------|--------------------------|
-| 0              | 384        | 16×24B signature elements|
-| 384            | 144        | 6×24B auth path nodes    |
-| 528            | 24         | Merkle root              |
-| 552            | 384        | 16×24B LM-OTS public key |
+- **`N`**: Hash length (24 bytes, truncated SHA-256)
+- **`H`**: Merkle tree height (10)
+- **`LEAVES`**: Number of leaves (2^H = 64)
+- **`W`**: Winternitz parameter (32)
+- **`P`**: Number of LM-OTS chains (8)
 
-**Total Size**: 936 bytes
+Key functions:
 
----
+- `generate_random_bytes()`: Fills buffer with pseudo-random data.
+- `hash_sha192()`: Computes truncated SHA-256 (24 bytes).
+- `wots_gen_pk()`: Derives public key from private key by iterated hashing.
+- `wots_pk_to_leaf()`: Hashes concatenated public key elements to form Merkle leaf.
+- `build_merkle_tree()`: Builds full tree and authentication path for a target leaf.
+- `print_memory_usage()`: Reads `/proc/self/status` to report RSS memory.
 
-## Security Analysis
-
-### 1. Attack Resistance
-| Attack Type          | Mitigation |
-|----------------------|------------|
-| Collision Attacks    | 192-bit hash strength |
-| Preimage Attacks     | SHA-256 security |
-| Signature Forgery    | Checksum in WOTS+ |
-| Key Reuse           | One-time keys + Merkle tree |
-
-### 2. Quantum Resistance
-- Security relies on hash function strength
-- No known quantum algorithm breaks SHA-256/192
-
----
-
-## DNSSEC Integration
-
-### Signature Flow
-1. **Signer**:
-   - Generates Merkle tree of LM-OTS keys
-   - Signs `(OTS-PK || ZSK)` with selected OTS key
-   - Publishes root in DNSKEY RR
-
-2. **Verifier**:
-   - Receives signature + auth path
-   - Rebuilds root using ZSK from DNS
-   - Validates against published root
-
-### Advantages
-- **Post-quantum secure**
-- **Small signatures** (936B vs 4KB for RSA-4096)
-- **Key rotation** via Merkle leaves
 
