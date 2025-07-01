@@ -11,9 +11,9 @@
 
 
 #define N 24           // 192-bit hash (SHA-256 truncated)
-#define H 10            // Merkle tree height => 2^H = 64 leaves
+#define H 10            
 #define LEAVES (1 << H)
-#define W 32           // Winternitz parameter
+#define W 32           
 #define P 8
 
 // Simple pseudo-random data generator
@@ -258,7 +258,7 @@ clock_t t_end_sig = clock();  // BENCH
     fwrite(merkle_root, 1, N, f);
 
 
-//  Write LM-OTS public key used in signing (so verifier has full context)
+//  Write LM-OTS public key used in signing 
 for (int i = 0; i < P; i++)
     fwrite(keypairs[target].pk[i], 1, N, f);
 fclose(f);
